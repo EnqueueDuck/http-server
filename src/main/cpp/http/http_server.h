@@ -19,7 +19,7 @@ struct HttpServerOpts {
 class HttpServer : public Server {
  public:
   explicit HttpServer(HttpServerOpts opts)
-      : opts_(opts), Server(opts.server_opts), executor_(opts.executor_opts) { }
+      : Server(opts.server_opts), opts_(opts), executor_(opts.executor_opts) { }
 
   void Initialize() {
     Server::Initialize();
@@ -37,8 +37,8 @@ class HttpServer : public Server {
   }
 
  private:
-  thread::Executor executor_;
   HttpServerOpts opts_;
+  thread::Executor executor_;
 
   void InternalHandle(int connection_sd);
 };

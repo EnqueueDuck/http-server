@@ -14,5 +14,8 @@ cmake(
         "BUILD_SHARED_LIBS": "ON",
     },
     lib_source = ":all_srcs",
-    out_shared_libs = ["libgflags.so"],
+    out_shared_libs = [
+        "libgflags.so",
+        "libgflags.so.2.2",
+    ],
 )

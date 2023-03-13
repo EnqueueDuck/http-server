@@ -1,7 +1,20 @@
-# include "http/server.h"
+#include <iostream>
+#include <thread>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
-int main() {
-  http::Server server;
+#include "http/http_server.h"
+
+int main(int argc, char *argv[]) {
+  FLAGS_logtostderr = 1;
+  google::InitGoogleLogging(argv[0]);
+  google::ParseCommandLineFlags(&argc, &argv, true);
+
+  http::HttpServerOpts opts;
+  opts.executor_opts.num_worker_threads = std::thread::hardware_concurrency();
+
+  http::HttpServer server(opts);
+  server.Initialize();
   server.Run();
   return 0;
 }

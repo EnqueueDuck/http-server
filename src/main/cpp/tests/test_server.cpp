@@ -1,10 +1,18 @@
+#include <iostream>
+#include <thread>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "http/http_server.h"
 
-#include <thread>
+int main(int argc, char *argv[]) {
+  FLAGS_logtostderr = 1;
+  google::InitGoogleLogging(argv[0]);
+  google::ParseCommandLineFlags(&argc, &argv, true);
 
-int main() {
   http::HttpServerOpts opts;
   opts.executor_opts.num_worker_threads = std::thread::hardware_concurrency();
+
   http::HttpServer server(opts);
   server.Initialize();
   server.Run();

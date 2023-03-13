@@ -6,12 +6,12 @@ server to achieve beter through-put.
 
 # Releases
 
-### Version 1.0
+### Version 1.1
 
 To run the server:
 
 ```
-bazel run -c opt src/main/cpp:test_server
+bazel run -c opt src/main/cpp:server
 ```
 
 Simple HTTP Server with a multi-threaded backend. The backend employs a ThreadPool, which manages
@@ -32,4 +32,3 @@ Running 20s test @ http://host:14396
 Requests/sec:  20699.89
 Transfer/sec:    808.59KB
 ```
-

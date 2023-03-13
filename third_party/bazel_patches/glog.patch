@@ -1,0 +1,13 @@
+diff --git a/bazel/glog.bzl b/bazel/glog.bzl
+index 40833b4..6395ddc 100644
+--- a/bazel/glog.bzl
++++ b/bazel/glog.bzl
+@@ -106,7 +106,7 @@ def glog_library(namespace = "google", with_gflags = 1, **kwargs):
+         "src/windows/port.h",
+     ]
+
+-    gflags_deps = ["@com_github_gflags_gflags//:gflags"] if with_gflags else []
++    gflags_deps = ["@third_party-gflags//:gflags"] if with_gflags else []
+
+     native.cc_library(
+         name = "glog",

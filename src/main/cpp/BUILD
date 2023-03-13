@@ -31,30 +31,12 @@ cc_library(
 )
 
 cc_binary(
-    name = "main",
+    name = "server",
     srcs = ["main.cpp"],
-    deps = [
-        ":http",
-        "@third_party-glog//:glog",
-    ],
-)
-
-cc_binary(
-    name = "test_thread",
-    srcs = ["tests/test_thread.cpp"],
-    linkopts = ["-lpthread"],
-    deps = [
-        ":thread",
-        "@third_party-glog//:glog",
-    ],
-)
-
-cc_binary(
-    name = "test_server",
-    srcs = ["tests/test_server.cpp"],
     linkopts = ["-lpthread"],
     deps = [
         ":http",
         "@third_party-glog//:glog",
+        "@third_party-gflags//:gflags",
     ],
 )
