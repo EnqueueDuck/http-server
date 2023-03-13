@@ -1,0 +1,18 @@
+package(default_visibility = ["//visibility:public"])
+
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+
+filegroup(
+    name = "all_srcs",
+    srcs = glob(["**"]),
+)
+
+cmake(
+    name = "gflags",
+    cache_entries = {
+        "CMAKE_CXX_FLAGS": "-fPIC",
+        "BUILD_SHARED_LIBS": "ON",
+    },
+    lib_source = ":all_srcs",
+    out_shared_libs = ["libgflags.so"],
+)
