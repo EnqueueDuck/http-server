@@ -27,3 +27,13 @@ http_archive(
     patches = ["@//:third_party/bazel_patches/glog.patch"],
     patch_args = ["-p1"],
 )
+
+http_archive(
+    name = "third_party-event",
+    sha256 = "92e6de1be9ec176428fd2367677e61ceffc2ee1cb119035037a27d346b0403bb",
+    strip_prefix = "libevent-2.1.12-stable",
+    urls = [
+        "https://github.com/libevent/libevent/releases/download/release-2.1.12-stable/libevent-2.1.12-stable.tar.gz",
+    ],
+    build_file = "@//:third_party/bazel/BUILD.event",
+)

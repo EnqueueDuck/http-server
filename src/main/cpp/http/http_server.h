@@ -18,7 +18,7 @@ struct HttpServerOpts {
 
 class HttpServer : public Server {
  public:
-  constexpr static int DEFAULT_HTTP_REQUEST_SIZE = 1024;
+  constexpr static int DEFAULT_HTTP_REQUEST_SIZE = 8192;
 
   explicit HttpServer(const HttpServerOpts &opts) : Server(opts.server_opts), opts_(opts) {
     for (int i = 0; i < opts_.num_workers; ++i) {
@@ -47,6 +47,7 @@ class HttpServer : public Server {
 
    private:
     WorkerOpts opts_;
+    std::unique_ptr<char[]> buffer_;
 
     int epoll_fd_;
     std::thread thread_;

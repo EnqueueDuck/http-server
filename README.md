@@ -12,7 +12,7 @@ To run the server, default host is 14396:
 bazel run -c opt src/main/cpp:server
 ```
 
-### Version 2.0
+### Version 2.1.0
 
 HTTP Server with N workers. Connections are distributed to the workers, each work handles IO
 using EPOLL.
@@ -22,12 +22,12 @@ user~/wrk (master) ./wrk -t8 -c 10000 -d20s http://host:14396
 Running 20s test @ http://host:14396
   8 threads and 10000 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    51.63us  129.97us  48.81ms   99.68%
-    Req/Sec   103.74k    11.08k  134.55k    71.14%
-  2073920 requests in 20.10s, 79.11MB read
+    Latency    31.02us   37.16us  15.38ms   99.95%
+    Req/Sec    74.05k    26.72k  103.45k    59.33%
+  4420272 requests in 20.03s, 168.62MB read
   Socket errors: connect 8987, read 0, write 0, timeout 0
-Requests/sec: 103189.69
-Transfer/sec:      3.94MB
+Requests/sec: 220632.74
+Transfer/sec:      8.42MB
 ```
 
 ### Version 1.1

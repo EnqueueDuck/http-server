@@ -5,13 +5,14 @@
 namespace http {
 
 void HttpServer::Worker::HandleConnection(int connection_sd) {
-  char buffer[opts_.max_http_request_size];
-
   int bytes_read = 1;
   while (bytes_read) {
-    bytes_read = recv(connection_sd, buffer, sizeof(buffer), 0);
+    bytes_read = recv(connection_sd, buffer_.get(), opts_.max_http_request_size, 0);
     if (bytes_read < 0) {
-      LOG(ERROR) << "Error reading connection data";
+      // Connection reset by peer is normal
+      if (errno != ECONNRESET) {
+        LOG(ERROR) << "Error reading connection data " << errno;
+      }
       close(connection_sd);
       return;
     }
@@ -19,7 +20,7 @@ void HttpServer::Worker::HandleConnection(int connection_sd) {
 
     // Parse the http request
     request::HttpRequest request;
-    request.ParseFromString(buffer);
+    request.ParseFromString(buffer_.get());
 
     // Handle the request
     response::HttpResponse response = HandleRequest(request);
@@ -37,6 +38,7 @@ void HttpServer::Worker::Stop() {
 }
 
 void HttpServer::Worker::Initialize() {
+  buffer_ = std::make_unique<char[]>(opts_.max_http_request_size);
   epoll_fd_ = epoll_create1(0);
   thread_ = std::thread([this]() {
     struct epoll_event events[MAX_EPOLL_EVENTS];
