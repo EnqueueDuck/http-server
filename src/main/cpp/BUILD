@@ -34,6 +34,7 @@ cc_binary(
     name = "server",
     srcs = ["main.cpp"],
     linkopts = ["-lpthread"],
+    copts = ["-std=c++1z"],
     deps = [
         ":http",
         "@third_party-glog//:glog",

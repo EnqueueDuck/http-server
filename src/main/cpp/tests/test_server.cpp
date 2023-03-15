@@ -11,7 +11,7 @@ int main(int argc, char *argv[]) {
   google::ParseCommandLineFlags(&argc, &argv, true);
 
   http::HttpServerOpts opts;
-  opts.executor_opts.num_worker_threads = std::thread::hardware_concurrency();
+  opts.num_workers = std::thread::hardware_concurrency();
 
   http::HttpServer server(opts);
   server.Initialize();

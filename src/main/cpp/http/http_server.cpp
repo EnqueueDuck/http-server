@@ -4,7 +4,7 @@
 
 namespace http {
 
-void HttpServer::InternalHandle(int connection_sd) {
+void HttpServer::Worker::HandleConnection(int connection_sd) {
   char buffer[opts_.max_http_request_size];
 
   int bytes_read = 1;
@@ -16,9 +16,6 @@ void HttpServer::InternalHandle(int connection_sd) {
       return;
     }
     if (bytes_read == 0) break;
-
-    VLOG(1) << "Received " << bytes_read << " bytes";
-    VLOG(1) << buffer;
 
     // Parse the http request
     request::HttpRequest request;
@@ -34,8 +31,66 @@ void HttpServer::InternalHandle(int connection_sd) {
   close(connection_sd);
 }
 
+void HttpServer::Worker::Stop() {
+  stopped_ = true;
+  thread_.join();
+}
+
+void HttpServer::Worker::Initialize() {
+  epoll_fd_ = epoll_create1(0);
+  thread_ = std::thread([this]() {
+    struct epoll_event events[MAX_EPOLL_EVENTS];
+    int num_events;
+    while (!stopped_) {
+      num_events = epoll_wait(epoll_fd_, events, MAX_EPOLL_EVENTS, EPOLL_TIMEOUT_MS);
+      for (int i = 0; i < num_events; ++i) {
+        // Client hang up
+        if (events[i].events & EPOLLHUP) {
+          close(events[i].data.fd);
+          continue;
+        }
+
+        // Error
+        if ((events[i].events & EPOLLERR) || !(events[i].events & EPOLLIN)) {
+          LOG(ERROR) << "Error caught with fd " << events[i].data.fd;
+          continue;
+        }
+
+        HandleConnection(events[i].data.fd);
+      }
+    }
+
+  });
+}
+
+void HttpServer::Worker::AddConnection(int connection_sd) {
+  struct epoll_event event;
+  event.data.fd = connection_sd;
+  event.events = EPOLLIN;
+
+  epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, connection_sd, &event);
+}
+
 void HttpServer::Handle(int connection_sd) {
-  executor_.Execute(std::bind(&HttpServer::InternalHandle, this, connection_sd));
+  auto &worker = workers_[current_worker_idx_++];
+  worker->AddConnection(connection_sd);
+  if (current_worker_idx_ >= workers_.size()) current_worker_idx_ = 0;
+}
+
+void HttpServer::Initialize() {
+  Server::Initialize();
+  for (auto &worker : workers_) {
+    worker->Initialize();
+  }
+}
+
+response::HttpResponse HttpServer::Worker::HandleRequest(
+    const request::HttpRequest &request
+) const {
+  response::HttpResponse response;
+  response.status_code = response::HTTP_200_OK;
+  response.body = "ok";
+  return response;
 }
 
 } // namespace http
