@@ -1,6 +1,20 @@
 #include "http/http_server.h"
 
+#include <fcntl.h>
+
 #include "http/http_request.h"
+
+
+static void set_nonblocking(int fd) {
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags < 0) {
+    LOG(ERROR) << "Error setting fd to non-blocking";
+    return;
+  }
+  if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+    LOG(ERROR) << "Error setting fd to non-blocking";
+  }
+}
 
 namespace http {
 
@@ -9,6 +23,11 @@ void HttpServer::Worker::HandleConnection(int connection_sd) {
   while (bytes_read) {
     bytes_read = recv(connection_sd, buffer_.get(), opts_.max_http_request_size, 0);
     if (bytes_read < 0) {
+      // Empty read due to non-blocking read, don't close yet
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return;
+      }
+
       // Connection reset by peer is normal
       if (errno != ECONNRESET) {
         LOG(ERROR) << "Error reading connection data " << errno;
@@ -61,16 +80,19 @@ void HttpServer::Worker::Initialize() {
         HandleConnection(events[i].data.fd);
       }
     }
-
   });
 }
 
 void HttpServer::Worker::AddConnection(int connection_sd) {
+  set_nonblocking(connection_sd);
+
   struct epoll_event event;
   event.data.fd = connection_sd;
   event.events = EPOLLIN;
 
-  epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, connection_sd, &event);
+  if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, connection_sd, &event) < 0) {
+    LOG(ERROR) << "Error adding connection: " << connection_sd << " to epoll manager";
+  }
 }
 
 void HttpServer::Handle(int connection_sd) {
