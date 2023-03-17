@@ -4,6 +4,11 @@
 #include <thread>
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <queue>
+#include <condition_variable>
+
+#include <event2/event.h>
 
 #include "http/server.h"
 #include "http/http_response.h"
@@ -43,17 +48,19 @@ class HttpServer : public Server {
 
     void Stop();
 
+    void HandleConnection(int connection_sd);
+
     void AddConnection(int connection_sd);
 
    private:
     WorkerOpts opts_;
     std::unique_ptr<char[]> buffer_;
-
-    int epoll_fd_;
-    std::thread thread_;
     std::atomic_bool stopped_{false};
 
-    void HandleConnection(int connection_sd);
+    std::condition_variable cond_;
+    std::queue<int> task_queue_;
+    std::mutex mtx_;
+    std::thread thread_;
 
     virtual response::HttpResponse HandleRequest(const request::HttpRequest &request) const;
   };
@@ -62,14 +69,21 @@ class HttpServer : public Server {
 
   void Initialize();
 
+  void AssignConnectionToWorker(int connection_sd);
+
  protected:
   void Handle(int connection_sd) override;
 
+  void Stop();
 
  private:
   HttpServerOpts opts_;
+
   std::vector<WorkerPtr> workers_;
   int current_worker_idx_ = 0;
+
+  struct event_config *event_cfg_;
+  struct event_base *event_base_;
 };
 
 } // namespace http

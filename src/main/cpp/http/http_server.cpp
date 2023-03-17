@@ -1,18 +1,21 @@
 #include "http/http_server.h"
 
 #include <fcntl.h>
+#include <functional>
 
 #include "http/http_request.h"
 
-
-static void set_nonblocking(int fd) {
-  int flags = fcntl(fd, F_GETFL, 0);
-  if (flags < 0) {
-    LOG(ERROR) << "Error setting fd to non-blocking";
-    return;
-  }
-  if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-    LOG(ERROR) << "Error setting fd to non-blocking";
+static void worker_event_callback(int fd, short what, void *arg) {
+  if (what & EV_READ) {
+    http::HttpServer *server = reinterpret_cast<http::HttpServer*>(arg);
+    auto callback = std::bind(&http::HttpServer::AssignConnectionToWorker, server, fd);
+    callback();
+  } else {
+    LOG(ERROR) << "Got a strange event "
+               << ((what & EV_TIMEOUT) ? " timeout" : "")
+               << ((what & EV_READ)    ? " read"    : "")
+               << ((what & EV_WRITE)   ? " write"   : "")
+               << ((what & EV_SIGNAL)  ? " signal"  : "");
   }
 }
 
@@ -51,54 +54,51 @@ void HttpServer::Worker::HandleConnection(int connection_sd) {
   close(connection_sd);
 }
 
+void HttpServer::Worker::AddConnection(int connection_sd) {
+  std::unique_lock<std::mutex> lck(mtx_);
+  task_queue_.push(connection_sd);
+  cond_.notify_one();
+}
+
 void HttpServer::Worker::Stop() {
   stopped_ = true;
   thread_.join();
+  cond_.notify_one();
 }
 
 void HttpServer::Worker::Initialize() {
   buffer_ = std::make_unique<char[]>(opts_.max_http_request_size);
-  epoll_fd_ = epoll_create1(0);
+
   thread_ = std::thread([this]() {
-    struct epoll_event events[MAX_EPOLL_EVENTS];
-    int num_events;
+    std::unique_lock<std::mutex> lck(mtx_);
     while (!stopped_) {
-      num_events = epoll_wait(epoll_fd_, events, MAX_EPOLL_EVENTS, EPOLL_TIMEOUT_MS);
-      for (int i = 0; i < num_events; ++i) {
-        // Client hang up
-        if (events[i].events & EPOLLHUP) {
-          close(events[i].data.fd);
-          continue;
-        }
-
-        // Error
-        if ((events[i].events & EPOLLERR) || !(events[i].events & EPOLLIN)) {
-          LOG(ERROR) << "Error caught with fd " << events[i].data.fd;
-          continue;
-        }
-
-        HandleConnection(events[i].data.fd);
+      cond_.wait(lck);
+      if (!task_queue_.empty()) {
+        auto t = task_queue_.front(); 
+        task_queue_.pop();
+        HandleConnection(t);
       }
     }
   });
 }
 
-void HttpServer::Worker::AddConnection(int connection_sd) {
-  set_nonblocking(connection_sd);
-
-  struct epoll_event event;
-  event.data.fd = connection_sd;
-  event.events = EPOLLIN;
-
-  if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, connection_sd, &event) < 0) {
-    LOG(ERROR) << "Error adding connection: " << connection_sd << " to epoll manager";
+void HttpServer::AssignConnectionToWorker(int connection_id) {
+  workers_[current_worker_idx_++]->AddConnection(connection_id);
+  if (current_worker_idx_ >= static_cast<int>(workers_.size())) {
+    current_worker_idx_ = 0;
   }
 }
 
 void HttpServer::Handle(int connection_sd) {
-  auto &worker = workers_[current_worker_idx_++];
-  worker->AddConnection(connection_sd);
-  if (current_worker_idx_ >= workers_.size()) current_worker_idx_ = 0;
+  auto new_event = event_new(
+    event_base_,
+    connection_sd,
+    EV_READ,
+    worker_event_callback,
+    this
+  );
+  event_add(new_event, NULL);
+  event_base_dispatch(event_base_);
 }
 
 void HttpServer::Initialize() {
@@ -106,6 +106,17 @@ void HttpServer::Initialize() {
   for (auto &worker : workers_) {
     worker->Initialize();
   }
+
+  // Initialize event_base
+  event_cfg_ = event_config_new(); 
+  event_config_require_features(event_cfg_, EV_FEATURE_ET);
+  event_base_ = event_base_new_with_config(event_cfg_);
+  event_config_free(event_cfg_);
+}
+
+void HttpServer::Stop() {
+  Server::Stop();
+  event_base_free(event_base_);
 }
 
 response::HttpResponse HttpServer::Worker::HandleRequest(

@@ -12,6 +12,7 @@ cc_library(
     copts = ["-std=c++1z"],
     deps = [
         ":thread",
+        "@third_party-event//:event",
         "@third_party-glog//:glog",
     ]
 )

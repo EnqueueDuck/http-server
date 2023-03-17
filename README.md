@@ -12,6 +12,24 @@ To run the server, default host is 14396:
 bazel run -c opt src/main/cpp:server
 ```
 
+### Version 3.0.0
+
+HTTP Server with N workers. Connections are monitored by libevent, active connections are passed
+to workers for handling.
+
+```
+user~/wrk (master) ./wrk -t8 -c 10000 -d20s http://host:14396
+Running 20s test @ http://host:14396
+  8 threads and 10000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    45.01us   33.27us  11.13ms   92.94%
+    Req/Sec   115.95k     8.27k  140.82k    72.00%
+  2306535 requests in 20.04s, 87.99MB read
+  Socket errors: connect 8987, read 8, write 0, timeout 0
+Requests/sec: 115099.39
+Transfer/sec:      4.39MB
+```
+
 ### Version 2.2.0
 
 HTTP Server with N workers. Connections are distributed to the workers, each work handles IO
@@ -48,7 +66,7 @@ Requests/sec: 220632.74
 Transfer/sec:      8.42MB
 ```
 
-### Version 1.1
+### Version 1.1.0
 
 HTTP Server with a multi-threaded backend. The backend employs a ThreadPool, which manages
 N worker threads. Each request is encapsulated in a Task object and passed to one of the worker
