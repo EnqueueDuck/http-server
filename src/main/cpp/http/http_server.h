@@ -71,8 +71,9 @@ class HttpServer : public Server {
 
   void AssignConnectionToWorker(int connection_sd);
 
- protected:
   void Handle(int connection_sd) override;
+
+ protected:
 
   void Stop();
 

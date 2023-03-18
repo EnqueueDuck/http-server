@@ -1,43 +1,58 @@
 #include "http/server.h"
 
+#include <functional>
 #include <netinet/in.h>
+
+static void accept_conn_cb(struct evconnlistener *listener,
+                           evutil_socket_t fd,
+                           struct sockaddr *address,
+                           int socklen,
+                           void *ctx) {
+  http::Server *server = reinterpret_cast<http::Server*>(ctx);
+  auto callback = std::bind(&http::Server::Handle, server, fd);
+  callback();
+}
+
+static void accept_error_cb(struct evconnlistener *listener, void *ctx) {
+  http::Server *server = reinterpret_cast<http::Server*>(ctx);
+  int err = EVUTIL_SOCKET_ERROR();
+  auto callback = std::bind(&http::Server::HandleError, server, err);
+  callback();
+}
 
 namespace http {
 
 void Server::Stop() {
   stopped = true;
+  evconnlistener_free(ev_conn_listener_);
 }
 
 void Server::Run() {
-  // Creating the server socket
-  server_sd_ = socket(AF_INET, SOCK_STREAM, 0);
-  if(server_sd_ < 0) {
-    throw std::runtime_error("Error establishing the server socket");
-  }
+  // Initialize event_base
+  event_cfg_ = event_config_new(); 
+  event_base_ = event_base_new_with_config(event_cfg_);
+  event_config_free(event_cfg_);
 
-  // Binding server socket to intended address
-  int bind_status = bind(server_sd_, (struct sockaddr*) &server_addr_, sizeof(server_addr_));
-  if (bind_status < 0) {
-    throw std::runtime_error("Error binding the server socket");
-  }
+  // Initialize connection listener
+  ev_conn_listener_ = evconnlistener_new_bind(
+    event_base_,
+    accept_conn_cb,
+    this,
+    LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE,
+    opts_.backlog,
+    (struct sockaddr*)&server_addr_,
+    sizeof(server_addr_)
+  );
 
-  LOG(INFO) << "Server starts listening on port " << opts_.port;
-  while (!stopped) {
-    listen(server_sd_, opts_.backlog);
+  // Set error callback
+  evconnlistener_set_error_cb(ev_conn_listener_, accept_error_cb);
 
-    // Received a new connection
-    sockaddr_in conn_socket_addr;
-    socklen_t conn_socket_addr_size = sizeof(conn_socket_addr);
+  // Ready to dispatch
+  event_base_dispatch(event_base_);
+}
 
-    // Accept the connection
-    int conn_sd = accept(server_sd_, (sockaddr *)&conn_socket_addr, &conn_socket_addr_size);
-    if (conn_sd < 0) {
-      throw std::runtime_error("Error accepting request from client");
-    }
-
-    // Handle the connection
-    Handle(conn_sd);
-  }
+void Server::HandleError(int err) {
+  LOG(ERROR) << "Error accepting connection: " << evutil_socket_error_to_string(err);
 }
 
 void Server::Initialize() {

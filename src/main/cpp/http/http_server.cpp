@@ -26,9 +26,9 @@ void HttpServer::Worker::HandleConnection(int connection_sd) {
   while (bytes_read) {
     bytes_read = recv(connection_sd, buffer_.get(), opts_.max_http_request_size, 0);
     if (bytes_read < 0) {
-      // Empty read due to non-blocking read, don't close yet
+      // Empty read/write due to non-blocking read, should continue listening
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        return;
+        continue;
       }
 
       // Connection reset by peer is normal
@@ -90,6 +90,7 @@ void HttpServer::AssignConnectionToWorker(int connection_id) {
 }
 
 void HttpServer::Handle(int connection_sd) {
+  // Connection received from ev_conn_listener should be non-blocking already
   auto new_event = event_new(
     event_base_,
     connection_sd,
@@ -108,10 +109,10 @@ void HttpServer::Initialize() {
   }
 
   // Initialize event_base
-  event_cfg_ = event_config_new(); 
-  event_config_require_features(event_cfg_, EV_FEATURE_ET);
-  event_base_ = event_base_new_with_config(event_cfg_);
-  event_config_free(event_cfg_);
+  auto cfg = event_config_new(); 
+  event_config_require_features(cfg, EV_FEATURE_ET);
+  event_base_ = event_base_new_with_config(cfg);
+  event_config_free(cfg);
 }
 
 void HttpServer::Stop() {

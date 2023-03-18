@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 
 #include <glog/logging.h>
+#include <event2/listener.h>
 
 namespace http {
 
@@ -16,21 +17,27 @@ struct ServerOpts {
   int backlog = DEFAULT_SERVER_BACK_LOG;
 };
 
-// Ref: https://github.com/bozkurthan/Simple-TCP-Server-Client-CPP-Example/blob/master/tcp-Server.cpp
 class Server {
  public:
   explicit Server(ServerOpts opts) : opts_(opts) {};
+  ~Server() {
+    if (!stopped) Stop();
+  }
 
   void Initialize();
   void Run();
   void Stop();
 
- protected:
   virtual void Handle(int connection_sd) = 0;
+  virtual void HandleError(int err);
 
  private:
   sockaddr_in server_addr_;
   int server_sd_;
+
+  struct event_config *event_cfg_;
+  struct event_base *event_base_;
+  struct evconnlistener *ev_conn_listener_;
 
   ServerOpts opts_;
   std::atomic_bool stopped{false};
