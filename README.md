@@ -12,7 +12,7 @@ To run the server, use the following command, default host is 14396:
 bazel run -c opt src/main/cpp:server
 ```
 
-### Version 3.1.0
+### Version 3.2.0
 
 The base class for server is `ServerSocket` at `src/main/cpp/server_socket.h`. I use an
 `evconnlistener` from `libevent` to bind and listen on the server address. For each new connection
