@@ -11,22 +11,7 @@ cc_library(
     includes = ["."],
     copts = ["-std=c++1z"],
     deps = [
-        ":thread",
         "@third_party-event//:event",
-        "@third_party-glog//:glog",
-    ]
-)
-
-cc_library(
-    name = "thread",
-    srcs = glob([
-        "thread/*.cpp",
-    ]),
-    hdrs = glob([
-        "thread/*.h",
-    ]),
-    includes = ["."],
-    deps = [
         "@third_party-glog//:glog",
     ]
 )

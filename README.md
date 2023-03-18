@@ -1,12 +1,12 @@
 # Introduction
 
-This repository contains several versions of a HTTP Server implemented in CPP. The purpose
-is to compare performance of different implementations and shows how one can optimize the
-server to achieve beter through-put.
+A sample HTTP Server implemented using `libevent`.
+
+This repository also contains several versions of a HTTP Server implemented in cpp.
 
 # Releases
 
-To run the server, default host is 14396:
+To run the server, use the following command, default host is 14396:
 
 ```
 bazel run -c opt src/main/cpp:server
@@ -15,14 +15,14 @@ bazel run -c opt src/main/cpp:server
 ### Version 3.1.0
 
 The base class for server is `ServerSocket` at `src/main/cpp/server_socket.h`. I use an
-`evconnlistener` from `libevent` to bind and listen on the server address. For a new connection
-accepted, `accept_conn_cb` is called. The server passes the connection to one of the workers
-(defined in `src/main/cpp/server`);
+`evconnlistener` from `libevent` to bind and listen on the server address. For each new connection
+, `accept_conn_cb` is called. The server passes the connection to one of the workers to handle
+(defined in `src/main/cpp/server`).
 
-The server worker runs an event loop, connections received from the server will be added for
-monitoring. When the connection becomes active, `conn_read_callback` will be triggered. It reads
-from the socket, parses the HTTP request, call `HandleHttpRequest` to produce an `HttpResponse` and
-write the response to the connection socket.
+The server worker runs an event loop, connections received from the server will be added to the
+loop for monitoring. When the connection becomes active, `conn_read_callback` will be triggered. It
+reads from the socket, parses the HTTP request, call `HandleHttpRequest` to produce an
+`HttpResponse` and write the response to the connection socket.
 
 Some notes:
 - Connections received from `evconnlistener` are non-blocking by default. When reading from
