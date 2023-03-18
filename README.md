@@ -12,22 +12,42 @@ To run the server, default host is 14396:
 bazel run -c opt src/main/cpp:server
 ```
 
-### Version 3.0.0
+### Version 3.1.0
+
+The base class for server is `ServerSocket` at `src/main/cpp/server_socket.h`. I use an
+`evconnlistener` from `libevent` to bind and listen on the server address. For a new connection
+accepted, `accept_conn_cb` is called. The server passes the connection to one of the workers
+(defined in `src/main/cpp/server`);
+
+The server worker runs an event loop, connections received from the server will be added for
+monitoring. When the connection becomes active, `conn_read_callback` will be triggered. It reads
+from the socket, parses the HTTP request, call `HandleHttpRequest` to produce an `HttpResponse` and
+write the response to the connection socket.
+
+Some notes:
+- Connections received from `evconnlistener` are non-blocking by default. When reading from
+non-blocking fd, if the buffer is not ready, error `EAGAIN` or `EWOULDBLOCK` would be returned. We
+should not close the connection there, but simply skip it, continue to proceed other connections.
+- When the event loop triggers `conn_read_callback`, the event associated with the connection
+becomes non-pending and will not trigger callbacks anymore, so in the callback function, we need
+to add the connection again after we're done processing it.
+- We run the event loop in one thread, when there's no event, and then adding connection to it from
+another thread, so we need to set flag `EVLOOP_NO_EXIT_ON_EMPTY`.
 
 HTTP Server with N workers. Connections are monitored by libevent, active connections are passed
 to workers for handling.
 
 ```
-user~/wrk (master) ./wrk -t8 -c 10000 -d20s http://host:14396
+user~/wrk (master) ./wrk -t8 -c10000 -d20s http://host:14396
 Running 20s test @ http://host:14396
   8 threads and 10000 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency    45.01us   33.27us  11.13ms   92.94%
-    Req/Sec   115.95k     8.27k  140.82k    72.00%
-  2306535 requests in 20.04s, 87.99MB read
-  Socket errors: connect 8987, read 8, write 0, timeout 0
-Requests/sec: 115099.39
-Transfer/sec:      4.39MB
+    Latency     3.39ms   16.09ms   1.68s    98.65%
+    Req/Sec    37.57k    11.24k  107.14k    71.88%
+  5897359 requests in 20.08s, 224.97MB read
+  Socket errors: connect 8987, read 0, write 0, timeout 0
+Requests/sec: 293685.43
+Transfer/sec:     11.20MB
 ```
 
 ### Version 2.2.0

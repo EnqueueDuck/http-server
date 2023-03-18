@@ -1,65 +1,121 @@
 #include "http/server.h"
 
+#include <fcntl.h>
 #include <functional>
-#include <netinet/in.h>
 
-static void accept_conn_cb(struct evconnlistener *listener,
-                           evutil_socket_t fd,
-                           struct sockaddr *address,
-                           int socklen,
-                           void *ctx) {
-  http::Server *server = reinterpret_cast<http::Server*>(ctx);
-  auto callback = std::bind(&http::Server::Handle, server, fd);
-  callback();
-}
+#include "http/http_request.h"
 
-static void accept_error_cb(struct evconnlistener *listener, void *ctx) {
-  http::Server *server = reinterpret_cast<http::Server*>(ctx);
-  int err = EVUTIL_SOCKET_ERROR();
-  auto callback = std::bind(&http::Server::HandleError, server, err);
-  callback();
+static void conn_read_callback(int fd, short what, void *arg) {
+  if (what & EV_READ) {
+    http::Server::Worker *worker = reinterpret_cast<http::Server::Worker*>(arg);
+    auto callback = std::bind(&http::Server::Worker::HandleConnection, worker, fd);
+    callback();
+  } else {
+    LOG(ERROR) << "Got a strange event "
+               << ((what & EV_TIMEOUT) ? " timeout" : "")
+               << ((what & EV_READ)    ? " read"    : "")
+               << ((what & EV_WRITE)   ? " write"   : "")
+               << ((what & EV_SIGNAL)  ? " signal"  : "");
+  }
 }
 
 namespace http {
 
-void Server::Stop() {
-  stopped = true;
-  evconnlistener_free(ev_conn_listener_);
+void Server::Worker::HandleConnection(int connection_sd) {
+  int bytes_read = 1;
+  while (bytes_read) {
+    bytes_read = recv(connection_sd, buffer_.get(), opts_.max_http_request_size, 0);
+    if (bytes_read < 0) {
+      // Empty read/write due to non-blocking read, should continue listening
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        AddConnection(connection_sd);
+        return;
+      }
+
+      // Connection reset by peer is normal
+      if (errno != ECONNRESET) {
+        LOG(ERROR) << "Error reading connection data " << errno;
+      }
+      close(connection_sd);
+      return;
+    }
+    if (bytes_read == 0) break;
+
+    // Parse the http request
+    request::HttpRequest request;
+    request.ParseFromString(buffer_.get());
+
+    // Handle the request
+    response::HttpResponse response = HandleHttpRequest(request);
+
+    // Send the response
+    auto data = response.SerializeToString();
+    send(connection_sd, data.c_str(), data.size(), 0);
+  }
+  close(connection_sd);
 }
 
-void Server::Run() {
-  // Initialize event_base
-  event_cfg_ = event_config_new(); 
-  event_base_ = event_base_new_with_config(event_cfg_);
-  event_config_free(event_cfg_);
-
-  // Initialize connection listener
-  ev_conn_listener_ = evconnlistener_new_bind(
+void Server::Worker::AddConnection(int connection_sd) {
+  // Connection received from ev_conn_listener should be non-blocking already
+  auto new_event = event_new(
     event_base_,
-    accept_conn_cb,
-    this,
-    LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE,
-    opts_.backlog,
-    (struct sockaddr*)&server_addr_,
-    sizeof(server_addr_)
+    connection_sd,
+    EV_READ,
+    conn_read_callback,
+    this
   );
-
-  // Set error callback
-  evconnlistener_set_error_cb(ev_conn_listener_, accept_error_cb);
-
-  // Ready to dispatch
-  event_base_dispatch(event_base_);
+  event_add(new_event, NULL);
 }
 
-void Server::HandleError(int err) {
-  LOG(ERROR) << "Error accepting connection: " << evutil_socket_error_to_string(err);
+void Server::Worker::Stop() {
+  thread_.join();
+
+  event_base_loopexit(event_base_, NULL);
+  event_base_free(event_base_);
+}
+
+void Server::Worker::Initialize() {
+  buffer_ = std::make_unique<char[]>(opts_.max_http_request_size);
+
+  // Initialize event_base
+  auto cfg = event_config_new(); 
+  event_config_require_features(cfg, EV_FEATURE_ET);
+  event_base_ = event_base_new_with_config(cfg);
+  event_config_free(cfg);
+
+  thread_ = std::thread([this]() {
+    event_base_loop(event_base_, EVLOOP_NO_EXIT_ON_EMPTY);
+  });
+}
+
+void Server::Handle(int connection_sd) {
+  workers_[current_worker_idx_++]->AddConnection(connection_sd);
+  if (current_worker_idx_ >= static_cast<int>(workers_.size())) {
+    current_worker_idx_ = 0;
+  }
 }
 
 void Server::Initialize() {
-  bzero((char*)&server_addr_, sizeof(server_addr_));
-  server_addr_.sin_family = AF_INET;
-  server_addr_.sin_addr.s_addr = htonl(INADDR_ANY);
-  server_addr_.sin_port = htons(opts_.port);
+  ServerSocket::Initialize();
+  for (auto &worker : workers_) {
+    worker->Initialize();
+  }
+}
+
+void Server::Stop() {
+  ServerSocket::Stop();
+  for (auto &worker : workers_) {
+    worker->Stop();
+  }
+}
+
+response::HttpResponse Server::Worker::HandleHttpRequest(
+    const request::HttpRequest &request
+) const {
+  response::HttpResponse response;
+  response.status_code = response::HTTP_200_OK;
+  response.body = "ok";
+  return response;
 }
 
 } // namespace http

@@ -1,46 +1,83 @@
 #pragma once
 
+#include <sys/epoll.h>
+#include <thread>
 #include <atomic>
-#include <sys/socket.h>
-#include <arpa/inet.h>
+#include <memory>
+#include <mutex>
+#include <queue>
+#include <condition_variable>
 
-#include <glog/logging.h>
-#include <event2/listener.h>
+#include <event2/event.h>
+
+#include "http/server_socket.h"
+#include "http/http_response.h"
+#include "http/http_request.h"
 
 namespace http {
 
 struct ServerOpts {
-  constexpr static int DEFAULT_SERVER_BACK_LOG = 32;
-  constexpr static int DEFAULT_SERVER_PORT = 14396;
-
-  int port = DEFAULT_SERVER_PORT;
-  int backlog = DEFAULT_SERVER_BACK_LOG;
+  ServerSocketOpts socket_opts;
+  int num_workers;
 };
 
-class Server {
+class Server : public ServerSocket {
  public:
-  explicit Server(ServerOpts opts) : opts_(opts) {};
-  ~Server() {
-    if (!stopped) Stop();
+  constexpr static int DEFAULT_HTTP_REQUEST_SIZE = 8192;
+
+  explicit Server(const ServerOpts &opts) : ServerSocket(opts.socket_opts), opts_(opts) {
+    for (int i = 0; i < opts_.num_workers; ++i) {
+      workers_.emplace_back(std::make_unique<Worker>(WorkerOpts()));
+    }
+    LOG(INFO) << "Started " << opts_.num_workers << " workers";
   }
 
-  void Initialize();
-  void Run();
-  void Stop();
+  struct WorkerOpts {
+    int max_http_request_size = DEFAULT_HTTP_REQUEST_SIZE;
+  };
 
-  virtual void Handle(int connection_sd) = 0;
-  virtual void HandleError(int err);
+  class Worker {
+   public:
+    Worker() = default;
+    explicit Worker(const WorkerOpts &opts) : opts_(opts) { }
+
+    constexpr static int MAX_EPOLL_EVENTS = 64;
+    constexpr static int EPOLL_TIMEOUT_MS = 10000; // 10 seconds
+
+    void Initialize();
+
+    void Stop();
+
+    void HandleConnection(int connection_sd);
+
+    void AddConnection(int connection_sd);
+
+   private:
+    WorkerOpts opts_;
+    std::unique_ptr<char[]> buffer_;
+
+    std::thread thread_;
+
+    struct event_base *event_base_;
+
+    virtual response::HttpResponse HandleHttpRequest(const request::HttpRequest &request) const;
+  };
+
+  using WorkerPtr = std::unique_ptr<Worker>;
+
+  void Initialize() override;
+
+  void Handle(int connection_sd) override;
+
+ protected:
+
+  void Stop() override;
 
  private:
-  sockaddr_in server_addr_;
-  int server_sd_;
-
-  struct event_config *event_cfg_;
-  struct event_base *event_base_;
-  struct evconnlistener *ev_conn_listener_;
-
   ServerOpts opts_;
-  std::atomic_bool stopped{false};
+
+  std::vector<WorkerPtr> workers_;
+  int current_worker_idx_ = 0;
 };
 
 } // namespace http
